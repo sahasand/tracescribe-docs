@@ -4,12 +4,14 @@
 Web app. User uploads a messy document (.docx, .pdf, .txt), picks a template type, AI extracts the content into structured fields, engine fills a clean formatted .docx template. Stateless — nothing stored, nothing persists.
 
 ## Current State
-**Implementation complete. Not yet deployed.**
+**Deployed and live.**
 
 - Backend: 46 tests passing (engine, extraction, API)
 - Frontend: Next.js builds clean, all components working
 - 6 templates with 288 total placeholders
-- Local dev: backend on :8000, frontend on :3001
+- **Live:** https://docs.tracescribe.com
+- **Backend:** https://tracescribe-docs-production.up.railway.app
+- **GitHub:** https://github.com/sahasand/tracescribe-docs
 
 ## Stack
 - **Backend:** Python 3.13, FastAPI, lxml, uvicorn — deploy on **Railway**
@@ -131,41 +133,33 @@ No navigation, no sidebar, no login. One page, one flow.
 - **Cards:** soft shadow, hover lift, hover border-teal
 - **Buttons:** `rounded-md`, teal primary
 
-## Deployment Plan
+## Deployment
 
 ### Backend → Railway
-1. Push repo to GitHub
-2. Create Railway project, connect repo
-3. Set root directory: `backend/`
-4. Railway auto-detects Dockerfile
-5. Add environment variables:
-   - `ANTHROPIC_API_KEY=sk-ant-...`
-   - `FRONTEND_URL=https://<vercel-domain>` (set after Vercel deploy)
-6. Railway provides a public URL like `https://tracescribe-backend-production.up.railway.app`
+- **URL:** https://tracescribe-docs-production.up.railway.app
+- **Repo:** `sahasand/tracescribe-docs` (root directory: `backend`)
+- **Builder:** Dockerfile (auto-detected)
+- **Port:** 8000
+- Auto-deploys on push to `main`
 
 ### Frontend → Vercel
-1. Connect same GitHub repo to Vercel
-2. Set root directory: `frontend/`
-3. Framework preset: Next.js (auto-detected)
-4. Add environment variable:
-   - `NEXT_PUBLIC_API_URL=https://<railway-url>`
-5. Deploy — Vercel gives URL like `https://tracescribe.vercel.app`
-6. Go back to Railway and set `FRONTEND_URL` to the Vercel URL
+- **URL:** https://docs.tracescribe.com (custom domain on tracescribe.com)
+- **Repo:** `sahasand/tracescribe-docs` (root directory: `frontend`)
+- **Framework:** Next.js (auto-detected)
+- Connected to GitHub — auto-deploys on push to `main`
 
-### Post-Deploy
-- Smoke test: upload a .txt file → select SOP → download .docx
-- Verify CORS works (frontend domain whitelisted in backend)
-- Custom domain optional via Vercel settings
-
-## Env Vars
+### Env Vars
 ```
-# Backend (.env / Railway)
+# Railway (backend)
 ANTHROPIC_API_KEY=sk-ant-...
-FRONTEND_URL=https://tracescribe.vercel.app
+FRONTEND_URL=https://docs.tracescribe.com
 
-# Frontend (.env.local / Vercel)
-NEXT_PUBLIC_API_URL=https://tracescribe-backend-production.up.railway.app
+# Vercel (frontend)
+NEXT_PUBLIC_API_URL=https://tracescribe-docs-production.up.railway.app
 ```
+
+### Custom Domain
+- Optional: add via Vercel project settings → Domains
 
 ## Running Locally
 ```bash
