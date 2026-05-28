@@ -5,30 +5,21 @@ import { useFormatDocument } from "@/hooks/useFormatDocument";
 import { StepIndicator } from "@/components/StepIndicator";
 import { TemplateGrid } from "@/components/TemplateGrid";
 import { UploadZone } from "@/components/UploadZone";
-import { ReviewPanel } from "@/components/ReviewPanel";
-import { StructuredReview } from "@/components/StructuredReview";
 import { ResultPanel } from "@/components/ResultPanel";
-import { TEMPLATE_META } from "@/lib/templates";
 
 export default function Home() {
   const {
     step,
     selectedTemplate,
-    fields,
     isLoading,
     error,
     downloadUrl,
     downloadFilename,
     selectTemplate,
     uploadFile,
-    updateField,
-    confirmAndFill,
     reset,
     goBack,
   } = useFormatDocument();
-
-  const templateName =
-    TEMPLATE_META.find((t) => t.type === selectedTemplate)?.displayName ?? "document";
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -53,42 +44,10 @@ export default function Home() {
 
         {step === "select" && <TemplateGrid onSelect={selectTemplate} />}
 
-        {step === "upload" &&
-          selectedTemplate &&
-          (isLoading || error ? (
-            // Extraction is in progress (or failed) — reuse the result panel's
-            // loading/error UI while we wait for fields to come back.
-            <ResultPanel
-              isLoading={isLoading}
-              error={error}
-              downloadUrl={null}
-              downloadFilename={null}
-              onReset={reset}
-              onRetry={goBack}
-            />
-          ) : (
-            <UploadZone
-              templateType={selectedTemplate}
-              onUpload={uploadFile}
-              onBack={goBack}
-            />
-          ))}
-
-        {step === "review" && fields && selectedTemplate === "general" && (
-          <StructuredReview
-            templateName={templateName}
-            fields={fields}
-            onGenerate={(f) => confirmAndFill(f)}
-            onBack={goBack}
-          />
-        )}
-
-        {step === "review" && fields && selectedTemplate !== "general" && (
-          <ReviewPanel
-            templateName={templateName}
-            fields={fields}
-            onChange={updateField}
-            onGenerate={() => confirmAndFill()}
+        {step === "upload" && selectedTemplate && (
+          <UploadZone
+            templateType={selectedTemplate}
+            onUpload={uploadFile}
             onBack={goBack}
           />
         )}

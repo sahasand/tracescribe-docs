@@ -1,14 +1,13 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { AppStep, Fields, FormatState, TemplateType } from "@/lib/types";
-import { extractFields, fillDocument } from "@/lib/api";
+import { AppStep, FormatState, TemplateType } from "@/lib/types";
+import { formatDocument } from "@/lib/api";
 
 const INITIAL_STATE: FormatState = {
   step: "select",
   selectedTemplate: null,
   file: null,
-  fields: null,
   isLoading: false,
   error: null,
   downloadUrl: null,
@@ -27,54 +26,23 @@ export function useFormatDocument() {
     }));
   }, []);
 
-  // Upload → extract fields → move to the review step.
+  // Drop a file → TraceScribe processes it → download. One step, no review.
   const uploadFile = useCallback(
     async (file: File) => {
       if (!state.selectedTemplate) return;
       const template = state.selectedTemplate;
 
-      setState((s) => ({ ...s, file, isLoading: true, error: null }));
-
-      try {
-        const fields = await extractFields(file, template);
-        setState((s) => ({
-          ...s,
-          step: "review" as AppStep,
-          isLoading: false,
-          fields,
-        }));
-      } catch (err) {
-        setState((s) => ({
-          ...s,
-          isLoading: false,
-          error: err instanceof Error ? err.message : "An error occurred",
-        }));
-      }
-    },
-    [state.selectedTemplate]
-  );
-
-  const updateField = useCallback((key: string, value: string) => {
-    setState((s) => (s.fields ? { ...s, fields: { ...s.fields, [key]: value } } : s));
-  }, []);
-
-  // Review confirmed → fill the template → download result.
-  const confirmAndFill = useCallback(
-    async (fields?: Fields) => {
-      const template = state.selectedTemplate;
-      const finalFields = fields ?? state.fields;
-      if (!template || !finalFields) return;
-
       setState((s) => ({
         ...s,
         step: "result" as AppStep,
+        file,
         isLoading: true,
         error: null,
         downloadUrl: null,
       }));
 
       try {
-        const blob = await fillDocument(template, finalFields);
+        const blob = await formatDocument(file, template);
         const url = URL.createObjectURL(blob);
         setState((s) => ({
           ...s,
@@ -90,7 +58,7 @@ export function useFormatDocument() {
         }));
       }
     },
-    [state.selectedTemplate, state.fields]
+    [state.selectedTemplate]
   );
 
   const reset = useCallback(() => {
@@ -103,13 +71,9 @@ export function useFormatDocument() {
       if (s.step === "upload") {
         return { ...s, step: "select", selectedTemplate: null };
       }
-      if (s.step === "review") {
-        return { ...s, step: "upload", fields: null, error: null };
-      }
       if (s.step === "result" && !s.isLoading) {
         if (s.downloadUrl) URL.revokeObjectURL(s.downloadUrl);
-        // Return to review so edits aren't lost.
-        return { ...s, step: "review", error: null, downloadUrl: null, downloadFilename: null };
+        return { ...s, step: "upload", error: null, downloadUrl: null, downloadFilename: null };
       }
       return s;
     });
@@ -119,8 +83,6 @@ export function useFormatDocument() {
     ...state,
     selectTemplate,
     uploadFile,
-    updateField,
-    confirmAndFill,
     reset,
     goBack,
   };

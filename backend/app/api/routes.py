@@ -8,7 +8,7 @@ from app.engine.docx_engine import fill_template
 from app.extraction.text_extractor import extract_text
 from app.extraction.ai_extractor import extract_fields
 from app.models.template_registry import TEMPLATES, TemplateInfo, get_template
-from app.models.schemas import ExtractResponse, FillRequest, TemplateInfoResponse
+from app.models.schemas import TemplateInfoResponse
 
 router = APIRouter()
 
@@ -105,30 +105,12 @@ async def list_templates():
     ]
 
 
-@router.post("/extract", response_model=ExtractResponse)
-async def extract_document(
-    file: UploadFile = File(...),
-    template_type: str = Form(...),
-):
-    """Extract structured fields from an upload for the user to review/edit."""
-    fields = await _extract(template_type, file)
-    return ExtractResponse(template_type=template_type, fields=fields)
-
-
-@router.post("/fill")
-async def fill_document(req: FillRequest):
-    """Fill a template from reviewed fields and return the completed .docx."""
-    template_info = _require_template(req.template_type)
-    output_bytes = await _fill(template_info, req.fields)
-    return _docx_response(req.template_type, output_bytes)
-
-
 @router.post("/format")
 async def format_document(
     file: UploadFile = File(...),
     template_type: str = Form(...),
 ):
-    """One-shot: upload → extract → fill → .docx (kept for backward compatibility)."""
+    """One-shot: upload → extract (the intelligence) → fill → return the .docx."""
     template_info = _require_template(template_type)
     fields = await _extract(template_type, file)
     output_bytes = await _fill(template_info, fields)
