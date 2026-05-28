@@ -30,6 +30,19 @@ ICS = tag("iCs")   # <w:iCs> — complex-script italic
 COLOR = tag("color")  # <w:color> — text color
 B = tag("b")       # <w:b> — bold
 
+# Structural tags for paragraph-splitting and empty-block pruning
+P = tag("p")          # <w:p> — paragraph
+TBL = tag("tbl")      # <w:tbl> — table
+TR = tag("tr")        # <w:tr> — table row
+BODY = tag("body")    # <w:body> — document body
+PPR = tag("pPr")      # <w:pPr> — paragraph properties
+PSTYLE = tag("pStyle")  # <w:pStyle> — paragraph style ref
+NUMPR = tag("numPr")  # <w:numPr> — numbering properties (auto-numbered headings)
+VAL = tag("val")      # the w:val attribute
+
+# The xml:space attribute (not in the wordprocessingml namespace)
+XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
+
 
 _XML_ESCAPE_MAP = {
     "&": "&amp;",

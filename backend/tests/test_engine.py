@@ -7,8 +7,15 @@ import zipfile
 import pytest
 from lxml import etree
 
-from app.engine.docx_engine import fill_template, _merge_runs, _fill_placeholders, PLACEHOLDER_RE
-from app.engine.xml_utils import T, R, RPR, I, ICS, COLOR, NS, escape_xml
+from app.engine.docx_engine import (
+    fill_template,
+    _merge_runs,
+    _fill_placeholders,
+    _split_paragraphs,
+    _prune_empty_blocks,
+    PLACEHOLDER_RE,
+)
+from app.engine.xml_utils import T, R, RPR, I, ICS, COLOR, NS, P, TBL, TR, escape_xml
 from app.models.template_registry import TEMPLATES, get_template
 
 
@@ -311,3 +318,154 @@ class TestSecureParsing:
         tree = secure_fromstring(legit)
         txt = "".join(t.text for t in tree.iter(T) if t.text)
         assert "A & B" in txt and "{{NAME}}" in txt
+
+
+class TestSplitParagraphs:
+    """A filled value containing \\n becomes real paragraph breaks."""
+
+    def _body(self, inner: str):
+        return etree.fromstring(f'<w:body xmlns:w="{NS}">{inner}</w:body>'.encode())
+
+    def test_multi_paragraph_clones_with_pPr_preserved(self):
+        inner = (
+            '<w:p><w:pPr><w:spacing w:after="120"/></w:pPr>'
+            '<w:r><w:t>para1\npara2\npara3</w:t></w:r></w:p>'
+        )
+        tree = self._body(inner)
+        _split_paragraphs(tree)
+        paras = tree.findall(P)
+        assert len(paras) == 3
+        texts = ["".join(t.text or "" for t in p.iter(T)) for p in paras]
+        assert texts == ["para1", "para2", "para3"]
+        for p in paras:  # spacing pPr survives on every clone
+            assert p.find(f"{{{NS}}}pPr") is not None
+
+    def test_single_line_unchanged(self):
+        tree = self._body('<w:p><w:r><w:t>just one line</w:t></w:r></w:p>')
+        _split_paragraphs(tree)
+        assert len(tree.findall(P)) == 1
+
+    def test_trailing_and_double_newlines_no_blank_paras(self):
+        tree = self._body('<w:p><w:r><w:t>a\n\nb\n</w:t></w:r></w:p>')
+        _split_paragraphs(tree)
+        texts = ["".join(t.text or "" for t in p.iter(T)) for p in tree.findall(P)]
+        assert texts == ["a", "b"]
+
+    def test_mixed_content_paragraph_not_cloned(self):
+        inner = (
+            '<w:p>'
+            '<w:r><w:t xml:space="preserve">Doc </w:t></w:r>'
+            '<w:r><w:t>X\nY</w:t></w:r>'
+            '</w:p>'
+        )
+        tree = self._body(inner)
+        _split_paragraphs(tree)
+        assert len(tree.findall(P)) == 1  # not duplicated
+        full = "".join(t.text or "" for t in tree.iter(T))
+        assert "X Y" in full  # newline collapsed to space as fallback
+
+
+class TestPruneEmptyRows:
+    """Fully-blank table data rows are removed; header is kept."""
+
+    def test_blank_data_row_removed_header_kept(self):
+        xml = (
+            f'<w:body xmlns:w="{NS}"><w:tbl>'
+            '<w:tr><w:tc><w:p><w:r><w:t>Abbreviation</w:t></w:r></w:p></w:tc>'
+            '<w:tc><w:p><w:r><w:t>Definition</w:t></w:r></w:p></w:tc></w:tr>'
+            '<w:tr><w:tc><w:p><w:r><w:t>EDC</w:t></w:r></w:p></w:tc>'
+            '<w:tc><w:p><w:r><w:t>Electronic Data Capture</w:t></w:r></w:p></w:tc></w:tr>'
+            '<w:tr><w:tc><w:p><w:r><w:t></w:t></w:r></w:p></w:tc>'
+            '<w:tc><w:p><w:r><w:t>   </w:t></w:r></w:p></w:tc></w:tr>'
+            '</w:tbl></w:body>'
+        )
+        tree = etree.fromstring(xml.encode())
+        _prune_empty_blocks(tree)
+        rows = tree.find(TBL).findall(TR)
+        assert len(rows) == 2
+        assert "Abbreviation" in "".join(t.text or "" for t in rows[0].iter(T))
+        assert "EDC" in "".join(t.text or "" for t in rows[1].iter(T))
+
+
+class TestPruneEmptySections:
+    """Blank numbered section blocks are removed; titled ones are kept."""
+
+    def _heading(self, level: int, text: str) -> str:
+        return (
+            f'<w:p><w:pPr><w:pStyle w:val="Heading{level}"/>'
+            f'<w:numPr><w:ilvl w:val="{level - 1}"/><w:numId w:val="2"/></w:numPr></w:pPr>'
+            f'<w:r><w:t>{text}</w:t></w:r></w:p>'
+        )
+
+    def _content(self, text: str) -> str:
+        return f'<w:p><w:r><w:t>{text}</w:t></w:r></w:p>'
+
+    def _numbered_headings(self, tree):
+        out = []
+        for p in tree.iter(P):
+            ppr = p.find(f"{{{NS}}}pPr")
+            if ppr is not None and ppr.find(f"{{{NS}}}numPr") is not None:
+                out.append(p)
+        return out
+
+    def test_empty_section_removed_filled_kept(self):
+        xml = (
+            f'<w:body xmlns:w="{NS}">'
+            + self._heading(1, "Purpose") + self._content("Why we exist.")
+            + self._heading(1, "") + self._content("")
+            + '</w:body>'
+        )
+        tree = etree.fromstring(xml.encode())
+        _prune_empty_blocks(tree)
+        assert len(self._numbered_headings(tree)) == 1
+        full = "".join(t.text or "" for t in tree.iter(T))
+        assert "Purpose" in full and "Why we exist." in full
+
+    def test_titled_section_without_content_kept(self):
+        xml = (
+            f'<w:body xmlns:w="{NS}">'
+            + self._heading(1, "Scope") + self._content("")
+            + '</w:body>'
+        )
+        tree = etree.fromstring(xml.encode())
+        _prune_empty_blocks(tree)
+        assert "Scope" in "".join(t.text or "" for t in tree.iter(T))
+
+
+class TestFillTemplateGeneral:
+    """End-to-end fill of the real General Document template (Phase 1)."""
+
+    def test_partial_general_splits_and_prunes(self):
+        from app.engine.docx_engine import _is_numbered_heading, _para_text
+        from app.engine.xml_utils import secure_fromstring
+
+        info = get_template("general")
+        values = {k: "" for k in info.placeholders}
+        values.update({
+            "ORGANIZATION_NAME": "Acme",
+            "DOCUMENT_TITLE": "Data Plan",
+            "SECTION_1_TITLE": "Purpose",
+            "SECTION_1_CONTENT": "First paragraph.\nSecond paragraph.",
+            "ABBREV_1": "EDC", "ABBREV_1_DEF": "Electronic Data Capture",
+            "REF_1_ID": "SOP-1", "REF_1_TITLE": "Master SOP",
+            "REV_1_VERSION": "1.0", "REV_1_DATE": "2026",
+            "REV_1_AUTHOR": "A", "REV_1_DESCRIPTION": "Initial",
+        })
+        out = fill_template(str(info.path), values)
+
+        zf = zipfile.ZipFile(io.BytesIO(out))
+        assert zf.testzip() is None
+        doc = secure_fromstring(zf.read("word/document.xml"))
+        full = "".join(t.text or "" for t in doc.iter(T))
+
+        # multi-paragraph content rendered as separate paragraphs
+        assert "First paragraph." in full and "Second paragraph." in full
+        # nothing left unfilled
+        assert "{{" not in full
+        # no blank numbered section heading survived
+        assert [p for p in doc.iter(P)
+                if _is_numbered_heading(p) and not _para_text(p).strip()] == []
+        # no fully-blank data row survived in any table
+        for tbl in doc.iter(TBL):
+            for row in tbl.findall(TR)[1:]:
+                assert any((t.text or "").strip() for t in row.iter(T))

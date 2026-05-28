@@ -14,6 +14,9 @@ class TemplateInfo:
     display_name: str
     description: str
     placeholders: list[str]
+    # Output token budget for the extraction call. The General Document has the
+    # most fields (75) and longest content, so it needs more headroom.
+    max_tokens: int = 8192
 
     @property
     def path(self) -> Path:
@@ -172,6 +175,7 @@ TEMPLATES: dict[str, TemplateInfo] = {
             "REF_3_ID", "REF_3_TITLE",
             "APPENDICES",
         ],
+        max_tokens=16384,
     ),
 }
 

@@ -143,6 +143,8 @@ This is a flexible, multi-section document template with:
 
 Map the source document's content to the numbered sections logically. If the source has fewer than 5 major sections, leave extra sections empty.
 
+For the long section content fields (the SECTION_*_CONTENT keys), you MAY use the newline character "\n" to separate paragraphs — each "\n" becomes a new paragraph in the document. Do NOT use "\n" in short fields (titles, IDs, dates, names, abbreviations, references).
+
 Return a JSON object with these exact keys (use "" for fields with no matching content):
 {_format_keys(placeholders)}
 

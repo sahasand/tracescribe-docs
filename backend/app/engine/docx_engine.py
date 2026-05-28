@@ -14,14 +14,23 @@ from copy import deepcopy
 from lxml import etree
 
 from .xml_utils import (
+    BODY,
     CONTENT_PARTS,
     B,
     COLOR,
     I,
     ICS,
+    NUMPR,
+    P,
+    PPR,
+    PSTYLE,
     R,
     RPR,
     T,
+    TBL,
+    TR,
+    VAL,
+    XML_SPACE,
     escape_xml,
     secure_fromstring,
 )
@@ -43,8 +52,10 @@ def fill_template(template_path: str, values: dict[str, str]) -> bytes:
     with open(template_path, "rb") as f:
         template_bytes = f.read()
 
-    # Escape XML entities in all values
-    safe_values = {k: escape_xml(v.replace("\n", " ")) for k, v in values.items()}
+    # Escape XML entities in all values. Newlines are preserved here (no longer
+    # collapsed to spaces) so _split_paragraphs can render them as real
+    # paragraph breaks after substitution.
+    safe_values = {k: escape_xml(v) for k, v in values.items()}
 
     parts = _unpack(template_bytes)
     modified_parts: dict[str, bytes] = {}
@@ -56,6 +67,8 @@ def fill_template(template_path: str, values: dict[str, str]) -> bytes:
         tree = secure_fromstring(parts[part_name])
         _merge_runs(tree)
         _fill_placeholders(tree, safe_values)
+        _split_paragraphs(tree)
+        _prune_empty_blocks(tree)
         modified_parts[part_name] = etree.tostring(tree, xml_declaration=True, encoding="UTF-8", standalone=True)
 
     output = _repack(template_bytes, modified_parts)
@@ -194,6 +207,133 @@ def _strip_template_styling(run: etree._Element) -> None:
         val = elem.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val", "")
         if val.upper() == "808080":
             rpr.remove(elem)
+
+
+def _enclosing_paragraph(elem: etree._Element) -> etree._Element | None:
+    """Walk up from an element to its nearest <w:p> ancestor."""
+    node = elem.getparent()
+    while node is not None and node.tag != P:
+        node = node.getparent()
+    return node
+
+
+def _split_paragraphs(tree: etree._Element) -> None:
+    """
+    Render newlines inside a filled value as real paragraph breaks.
+
+    A filled value may contain '\\n' (e.g. multi-paragraph section content).
+    A literal newline inside a <w:t> is treated as whitespace by Word, not a
+    break, so for each extra paragraph we clone the enclosing <w:p> — preserving
+    its paragraph properties (style, numbering, spacing) — and place it after.
+
+    Only applies when the paragraph's sole non-empty text run is this element;
+    paragraphs that mix multiple placeholders/runs fall back to space-joining so
+    we never duplicate unrelated content.
+    """
+    for t_elem in list(tree.iter(T)):
+        text = t_elem.text
+        if not text or "\n" not in text:
+            continue
+
+        para = _enclosing_paragraph(t_elem)
+        if para is None:
+            t_elem.text = text.replace("\n", " ")
+            continue
+
+        content_ts = [t for t in para.iter(T) if (t.text or "").strip()]
+        if len(content_ts) != 1 or content_ts[0] is not t_elem:
+            # Mixed-content paragraph — don't clone it; keep on one line.
+            t_elem.text = text.replace("\n", " ")
+            t_elem.set(XML_SPACE, "preserve")
+            continue
+
+        # Drop empty segments so "\n\n" / trailing "\n" don't add blank paragraphs.
+        segments = [s for s in text.split("\n") if s != ""]
+        if not segments:
+            t_elem.text = ""
+            continue
+
+        t_idx = list(para.iter(T)).index(t_elem)
+        t_elem.text = segments[0]
+        t_elem.set(XML_SPACE, "preserve")
+
+        anchor = para
+        for seg in segments[1:]:
+            clone = deepcopy(para)
+            clone_t = list(clone.iter(T))[t_idx]
+            clone_t.text = seg
+            clone_t.set(XML_SPACE, "preserve")
+            anchor.addnext(clone)
+            anchor = clone
+
+
+def _para_text(para: etree._Element) -> str:
+    """Concatenated text of all <w:t> in a paragraph."""
+    return "".join(t.text or "" for t in para.iter(T))
+
+
+def _is_numbered_heading(para: etree._Element) -> bool:
+    """True for an auto-numbered section heading (Heading1/2/3 with <w:numPr>)."""
+    ppr = para.find(PPR)
+    if ppr is None:
+        return False
+    pstyle = ppr.find(PSTYLE)
+    if pstyle is None or pstyle.get(VAL) not in ("Heading1", "Heading2", "Heading3"):
+        return False
+    return ppr.find(NUMPR) is not None
+
+
+def _prune_empty_blocks(tree: etree._Element) -> None:
+    """Remove leftover empty structure so partial documents look finished."""
+    _prune_empty_rows(tree)
+    _prune_empty_sections(tree)
+
+
+def _prune_empty_rows(tree: etree._Element) -> None:
+    """
+    Drop fully-blank data rows from tables (abbreviations, references, revision
+    history). The first <w:tr> (header) is always kept.
+    """
+    for tbl in list(tree.iter(TBL)):
+        rows = tbl.findall(TR)  # direct child rows only
+        for row in rows[1:]:
+            if all(not (t.text or "").strip() for t in row.iter(T)):
+                parent = row.getparent()
+                if parent is not None:
+                    parent.remove(row)
+
+
+def _prune_empty_sections(tree: etree._Element) -> None:
+    """
+    Remove a numbered section/subsection (its heading paragraph plus the content
+    paragraphs up to the next numbered heading) when the whole block is blank.
+    Word recomputes the "1." / "1.1" labels via auto-numbering, so no renumber.
+    """
+    for body in tree.iter(BODY):
+        children = list(body)
+        n = len(children)
+        to_remove: list[etree._Element] = []
+        idx = 0
+        while idx < n:
+            el = children[idx]
+            if el.tag == P and _is_numbered_heading(el):
+                block = [el]
+                j = idx + 1
+                while j < n:
+                    nxt = children[j]
+                    if nxt.tag != P or _is_numbered_heading(nxt):
+                        break
+                    block.append(nxt)
+                    j += 1
+                if all(not _para_text(p).strip() for p in block):
+                    to_remove.extend(block)
+                idx = j
+            else:
+                idx += 1
+        for el in to_remove:
+            parent = el.getparent()
+            if parent is not None:
+                parent.remove(el)
 
 
 def _repack(original_bytes: bytes, modified_parts: dict[str, bytes]) -> bytes:

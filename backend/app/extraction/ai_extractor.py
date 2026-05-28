@@ -40,10 +40,18 @@ async def extract_fields(template_type: str, document_text: str) -> dict[str, st
 
     message = await client.messages.create(
         model=settings.anthropic_model,
-        max_tokens=8192,
+        max_tokens=template_info.max_tokens,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
+
+    # If the model ran out of output budget the JSON is truncated; fail with a
+    # clear message instead of a confusing JSONDecodeError downstream.
+    if message.stop_reason == "max_tokens":
+        raise ValueError(
+            "AI response was truncated (hit the output token limit). "
+            "The source document may be too long for this template."
+        )
 
     # Extract text from response (guard against non-text leading blocks)
     response_text = next(
