@@ -6,7 +6,7 @@ Web app. User uploads a messy document (.docx, .pdf, .txt), picks a template typ
 ## Current State
 **Deployed and live.**
 
-- Backend: 51 tests passing (engine, extraction, API)
+- Backend: 62 tests passing (engine, extraction, API)
 - Frontend: Next.js builds clean, all components working
 - 6 templates with 288 total placeholders
 - **Live frontend:** https://docs.tracescribe.com (custom domain on tracescribe.com)
@@ -43,7 +43,7 @@ backend/
     models/
       schemas.py          # Pydantic response models
       template_registry.py  # Template type → file path + placeholder keys
-  tests/                # 46 tests (engine, extraction, API)
+  tests/                # 62 tests (engine, extraction, API)
   requirements.txt
   Dockerfile
   .env                  # Local only, gitignored
@@ -64,19 +64,23 @@ frontend/
 ```
 
 ## The Engine
-A .docx is a ZIP of XML files. The core engine unpacks the ZIP, finds `{{PLACEHOLDER}}` markers in `<w:t>` XML elements, replaces text, repacks. All original formatting (styles, images, headers, footers, tables, fonts) is preserved perfectly. Output is byte-identical to template except filled placeholders.
+A .docx is a ZIP of XML files. The core engine unpacks the ZIP, finds `{{PLACEHOLDER}}` markers in `<w:t>` XML elements, replaces text, repacks. All original formatting (styles, images, headers, footers, tables, fonts) is preserved.
+
+Per content part, the pipeline order is: `_expand_general` (general only — clone repeatable blocks) → `_merge_runs` → `_fill_placeholders` → `_split_paragraphs` (newlines → paragraphs) → `_prune_empty_blocks` (drop empty rows/sections) → serialize → `_repack` → `_validate`.
 
 ### Critical Rules
 1. Never recreate a .docx from scratch. Always unpack → edit XML → repack.
 2. Only modify `<w:t>` text elements. Never touch formatting XML.
-3. Word splits placeholders across multiple `<w:r>` runs — merge adjacent runs with identical `<w:rPr>` before scanning.
+3. Word splits placeholders across multiple `<w:r>` runs — merge adjacent runs with identical `<w:rPr>` before scanning. **Never merge runs containing a Word field (`<w:fldChar>`/`<w:instrText>`)** — doing so scrambles PAGE/NUMPAGES and breaks header/footer page numbers (`_run_has_field` guards this).
 4. Remove italic/gray (#808080) formatting from filled runs. Preserve bold.
 5. Escape XML entities in fill values: `& < > " '`
-6. Replace newlines in values with spaces (v1 decision).
-7. Process both `document.xml` AND `header1.xml` for placeholders.
+6. Preserve newlines: a `\n` in a value becomes a real paragraph break — `_split_paragraphs` clones the enclosing `<w:p>` (keeps style/numbering). Mixed-content paragraphs fall back to spaces.
+7. Process both `document.xml` AND `header1.xml`/`footer1.xml` for placeholders and fields.
 8. Use `re.sub` for replacement — headers have multiple placeholders per `<w:t>`.
-9. Validate output: ZIP valid, XML well-formed, no unfilled `{{}}` remaining.
-10. Parse all XML (esp. uploaded `.docx`) via `xml_utils.secure_fromstring` — entity expansion off (blocks billion-laughs/XXE). Never call `etree.fromstring` directly on untrusted bytes.
+9. After filling, `_prune_empty_blocks` removes blank table data rows (header kept) and blank numbered section/subsection blocks. Word auto-numbers (`<w:numPr>`) the survivors on open.
+10. Validate output: ZIP valid, XML well-formed, no unfilled `{{}}` remaining.
+11. Parse all XML (esp. uploaded `.docx`) via `xml_utils.secure_fromstring` — entity expansion off (blocks billion-laughs/XXE). Never call `etree.fromstring` directly on untrusted bytes.
+12. **General Document is variable-length** (`TemplateInfo.structured=True`): extraction returns lists, and `_expand_general` clones the template's prototype table rows (abbrev/ref/revision) and section/subsection/sub-subsection blocks per item. Other 5 templates use the flat placeholder path.
 
 ### XML Namespace
 ```python
@@ -110,17 +114,16 @@ Ship as .docx files bundled with the backend. Each has `{{PLACEHOLDER}}` markers
 | **CAPA Report** | 39 | Identification, problem statement, root cause investigation, corrective/preventive actions tables, effectiveness verification, closure |
 | **Training Record** | 35 | Training details, content/objectives, 5-row attendance log, assessment, trainer sign-off |
 | **Monitoring Visit** | 59 | Visit info, study status metrics, 6 monitoring activity subsections, findings by severity, action items, assessment, next visit |
-| **General Document** | 75 | Cover page, signature/approval page, revision history (3 rows), TOC, abbreviations (5 rows), 5 numbered sections with sub-sections (1.1, 1.1.1), references, appendices |
+| **General Document** | structured | Cover page, signatures, **variable-length** revision history, abbreviations, references, and numbered sections (with subsections 1.1 / sub-subsections 1.1.1) — any count, via block cloning. References, appendices |
 
 ## AI Extraction
 For each template type, send the uploaded document text to Claude with a prompt that:
-- Lists all placeholder keys for that template
 - Describes the template structure so Claude maps content logically
-- Asks Claude to return JSON mapping keys to extracted values
-- Instructs Claude to infer/summarize where the source doc is incomplete
-- Returns empty string for fields with no matching content
+- Asks Claude to return JSON, inferring/summarizing where the source is incomplete and using `""` for fields with no matching content
+- Flat templates: a JSON object of placeholder keys → values.
+- General Document: a **structured** JSON object — 15 scalar keys plus `revisions`/`abbreviations`/`references`/`sections` lists ("as many as the source has"), sections nested 3 levels. `ai_extractor._normalize_general` defensively coerces the shape.
 
-One API call per document. Model: default `claude-opus-4-8`, configurable via `ANTHROPIC_MODEL`. `max_tokens=8192`. The route offloads `extract_text`/`fill_template` to a threadpool (`run_in_threadpool`) so blocking work doesn't stall the event loop.
+One API call per document. Model: default `claude-opus-4-8`, configurable via `ANTHROPIC_MODEL`. `max_tokens` is per-template (`TemplateInfo.max_tokens`; general = 16384, others 8192); a truncation guard raises a clear error when `stop_reason == "max_tokens"`. The route offloads `extract_text`/`fill_template` to a threadpool (`run_in_threadpool`) so blocking work doesn't stall the event loop. There is no review/edit step — one shot: upload → process → download (the intelligence is in the processing).
 
 ## Frontend
 Single page app. Three states:
@@ -187,5 +190,5 @@ npm run dev -- --port 3001
 ## Testing
 ```bash
 cd backend
-pytest tests/ -v   # 51 tests, ~1s
+pytest tests/ -v   # 62 tests, ~1s
 ```
