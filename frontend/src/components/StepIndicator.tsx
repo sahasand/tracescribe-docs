@@ -10,6 +10,7 @@ interface StepIndicatorProps {
 const STEPS: { key: AppStep; label: string }[] = [
   { key: "select", label: "Choose Template" },
   { key: "upload", label: "Upload Document" },
+  { key: "review", label: "Review Fields" },
   { key: "result", label: "Download Result" },
 ];
 

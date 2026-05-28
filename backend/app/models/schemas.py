@@ -12,3 +12,15 @@ class TemplateInfoResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     detail: str
+
+
+class ExtractResponse(BaseModel):
+    """Structured fields extracted from an uploaded document, for review."""
+    template_type: str
+    fields: dict[str, str]
+
+
+class FillRequest(BaseModel):
+    """Reviewed/edited fields to fill into a template."""
+    template_type: str
+    fields: dict[str, str]

@@ -7,12 +7,15 @@ export interface TemplateInfo {
   placeholder_count: number;
 }
 
-export type AppStep = "select" | "upload" | "result";
+export type AppStep = "select" | "upload" | "review" | "result";
+
+export type Fields = Record<string, string>;
 
 export interface FormatState {
   step: AppStep;
   selectedTemplate: TemplateType | null;
   file: File | null;
+  fields: Fields | null;
   isLoading: boolean;
   error: string | null;
   downloadUrl: string | null;

@@ -133,3 +133,47 @@ class TestFrontendOrigins:
             "https://docs.tracescribe.com",
             "https://tracescribe-docs.vercel.app",
         ]
+
+
+@pytest.mark.anyio
+@patch("app.api.routes.extract_fields")
+async def test_extract_returns_fields_json(mock_extract, client):
+    mock_extract.side_effect = _mock_extract_fields("general")
+    content = b"Some general document content for extraction."
+    files = {"file": ("doc.txt", io.BytesIO(content), "text/plain")}
+    data = {"template_type": "general"}
+
+    resp = await client.post("/api/extract", files=files, data=data)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["template_type"] == "general"
+    info = get_template("general")
+    assert set(body["fields"].keys()) == set(info.placeholders)
+    assert body["fields"]["DOCUMENT_TITLE"] == "Test document_title"
+
+
+@pytest.mark.anyio
+async def test_fill_returns_docx_and_whitelists(client):
+    info = get_template("deviation")
+    fields = {k: f"Edited {k}" for k in info.placeholders}
+    fields["NOT_A_REAL_KEY"] = "ignored"  # must be dropped by whitelist
+
+    resp = await client.post(
+        "/api/fill",
+        json={"template_type": "deviation", "fields": fields},
+    )
+    assert resp.status_code == 200
+    assert "application/vnd.openxmlformats" in resp.headers["content-type"]
+    assert 'filename="deviation_formatted.docx"' in resp.headers["content-disposition"]
+    with zipfile.ZipFile(io.BytesIO(resp.content), "r") as zf:
+        assert zf.testzip() is None
+
+
+@pytest.mark.anyio
+async def test_fill_invalid_template(client):
+    resp = await client.post(
+        "/api/fill",
+        json={"template_type": "nope", "fields": {}},
+    )
+    assert resp.status_code == 400
+    assert "Unknown template type" in resp.json()["detail"]
