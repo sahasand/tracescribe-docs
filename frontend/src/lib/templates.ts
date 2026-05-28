@@ -15,9 +15,19 @@ interface TemplateMeta {
   description: string;
   icon: LucideIcon;
   color: string;
+  featured?: boolean;
 }
 
 export const TEMPLATE_META: TemplateMeta[] = [
+  {
+    type: "general",
+    displayName: "General Document",
+    description:
+      "Cover page, signatures, revision history, abbreviations table, numbered sections, references & appendices — the flexible all-purpose template.",
+    icon: BookOpen,
+    color: "text-teal-600",
+    featured: true,
+  },
   {
     type: "sop",
     displayName: "Standard Operating Procedure",
@@ -57,13 +67,5 @@ export const TEMPLATE_META: TemplateMeta[] = [
       "Visit info, study status, monitoring activities, findings & action items",
     icon: ClipboardCheck,
     color: "text-teal-500",
-  },
-  {
-    type: "general",
-    displayName: "General Document",
-    description:
-      "Cover page, signatures, revision history, numbered sections, references & appendices",
-    icon: BookOpen,
-    color: "text-gray-600",
   },
 ];

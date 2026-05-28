@@ -29,7 +29,7 @@ export function ResultPanel({
             Formatting Your Document
           </h3>
           <p className="text-sm text-gray-500">
-            AI is extracting and structuring the content. This may take 15-30 seconds.
+            TraceScribe is extracting and structuring the content. This may take 15-30 seconds.
           </p>
           <div className="mt-6 flex justify-center">
             <div className="flex gap-1">

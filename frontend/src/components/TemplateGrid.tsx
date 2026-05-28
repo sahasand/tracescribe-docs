@@ -28,6 +28,7 @@ export function TemplateGrid({ onSelect }: TemplateGridProps) {
             description={tmpl.description}
             icon={tmpl.icon}
             color={tmpl.color}
+            featured={tmpl.featured}
             onSelect={onSelect}
           />
         ))}
