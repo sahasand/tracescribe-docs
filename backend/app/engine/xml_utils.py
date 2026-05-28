@@ -39,6 +39,8 @@ PPR = tag("pPr")      # <w:pPr> — paragraph properties
 PSTYLE = tag("pStyle")  # <w:pStyle> — paragraph style ref
 NUMPR = tag("numPr")  # <w:numPr> — numbering properties (auto-numbered headings)
 VAL = tag("val")      # the w:val attribute
+FLDCHAR = tag("fldChar")      # <w:fldChar> — Word field boundary (begin/separate/end)
+INSTRTEXT = tag("instrText")  # <w:instrText> — Word field instruction (PAGE, NUMPAGES, ...)
 
 # The xml:space attribute (not in the wordprocessingml namespace)
 XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"

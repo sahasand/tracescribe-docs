@@ -236,6 +236,34 @@ class TestMergeRuns:
         merged = "".join(texts)
         assert "{{PLACEHOLDER}}" in merged
 
+    def test_does_not_merge_field_runs(self):
+        """Runs holding Word fields (PAGE/NUMPAGES) must not be merged — doing
+        so concatenates 'Page ' + ' of ' and scrambles the page-number field."""
+        xml = f"""
+        <w:body xmlns:w="{NS}">
+            <w:p>
+                <w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Page </w:t></w:r>
+                <w:r><w:rPr><w:b/></w:rPr>
+                    <w:fldChar w:fldCharType="begin"/>
+                    <w:instrText xml:space="preserve">PAGE</w:instrText>
+                    <w:fldChar w:fldCharType="separate"/>
+                    <w:fldChar w:fldCharType="end"/>
+                </w:r>
+                <w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve"> of </w:t></w:r>
+            </w:p>
+        </w:body>
+        """
+        tree = etree.fromstring(xml.encode())
+        _merge_runs(tree)
+
+        texts = [t.text for t in tree.iter(T)]
+        # The two literals must NOT be fused across the field.
+        assert "Page  of " not in texts
+        assert "Page " in texts and " of " in texts
+        # Field instruction preserved.
+        instr = [e.text for e in tree.iter(f"{{{NS}}}instrText")]
+        assert "PAGE" in instr
+
     def test_no_merge_different_formatting(self):
         """Runs with different formatting should NOT be merged."""
         xml = f"""

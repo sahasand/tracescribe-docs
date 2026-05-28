@@ -19,7 +19,9 @@ from .xml_utils import (
     B,
     COLOR,
     I,
+    FLDCHAR,
     ICS,
+    INSTRTEXT,
     NUMPR,
     P,
     PPR,
@@ -142,8 +144,19 @@ def _merge_runs(tree: etree._Element) -> None:
                 i += 1
 
 
+def _run_has_field(run: etree._Element) -> bool:
+    """True if a run participates in a Word field (PAGE, NUMPAGES, TOC, ...)."""
+    return run.find(FLDCHAR) is not None or run.find(INSTRTEXT) is not None
+
+
 def _runs_mergeable(run_a: etree._Element, run_b: etree._Element) -> bool:
     """Check if two runs have identical formatting properties."""
+    # Never merge field runs: merging the runs around a PAGE/NUMPAGES field
+    # concatenates the surrounding literals and scrambles the field, breaking
+    # page numbers in headers/footers.
+    if _run_has_field(run_a) or _run_has_field(run_b):
+        return False
+
     rpr_a = run_a.find(RPR)
     rpr_b = run_b.find(RPR)
 
