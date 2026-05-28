@@ -25,16 +25,22 @@ export default function Home() {
     <div className="min-h-screen flex flex-col">
       {/* Header */}
       <header className="border-b border-gray-200 bg-white/70 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-teal-600 flex items-center justify-center">
-            <FileText className="w-5 h-5 text-white" strokeWidth={1.5} />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold text-foreground tracking-tight">
-              TraceScribe
-            </h1>
-            <p className="text-xs text-gray-400 -mt-0.5">Document Formatter</p>
-          </div>
+        <div className="max-w-5xl mx-auto px-4 py-4">
+          <button
+            onClick={reset}
+            aria-label="TraceScribe home"
+            className="flex items-center gap-3 rounded-lg -m-1 p-1 transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-2"
+          >
+            <div className="w-9 h-9 rounded-lg bg-teal-600 flex items-center justify-center">
+              <FileText className="w-5 h-5 text-white" strokeWidth={1.5} />
+            </div>
+            <div className="text-left">
+              <h1 className="text-lg font-bold text-foreground tracking-tight">
+                TraceScribe
+              </h1>
+              <p className="text-xs text-gray-400 -mt-0.5">Document Formatter</p>
+            </div>
+          </button>
         </div>
       </header>
 
