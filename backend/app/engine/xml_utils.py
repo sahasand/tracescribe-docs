@@ -1,5 +1,7 @@
 """XML namespace helpers and entity escaping for WordprocessingML."""
 
+from lxml import etree
+
 NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
 # XML parts in a .docx that can contain placeholders
@@ -43,3 +45,23 @@ def escape_xml(text: str) -> str:
     for char, entity in _XML_ESCAPE_MAP.items():
         text = text.replace(char, entity)
     return text
+
+
+def secure_fromstring(data: bytes) -> etree._Element:
+    """
+    Parse XML from untrusted bytes with entity expansion disabled.
+
+    Uploaded .docx files are user-controlled. A hardened parser blocks
+    entity-expansion ("billion laughs") and external-entity (XXE) attacks:
+    `resolve_entities=False` stops internal entity bombs, `no_network=True`
+    and `load_dtd=False` block external/DTD fetches, `huge_tree=False`
+    caps document size. A fresh parser is created per call because lxml
+    parsers are not safe to share across threads.
+    """
+    parser = etree.XMLParser(
+        resolve_entities=False,
+        no_network=True,
+        load_dtd=False,
+        huge_tree=False,
+    )
+    return etree.fromstring(data, parser)

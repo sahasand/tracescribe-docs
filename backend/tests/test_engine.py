@@ -252,3 +252,62 @@ class TestMergeRuns:
         assert "Bold" in texts
         assert "Italic" in texts
         assert len(texts) == 2
+
+    def test_merge_preserves_non_text_children(self):
+        """Merging mergeable runs must not drop <w:br/>, tabs, etc."""
+        xml = f"""
+        <w:body xmlns:w="{NS}">
+            <w:p>
+                <w:r>
+                    <w:rPr><w:i/></w:rPr>
+                    <w:t>line one</w:t>
+                </w:r>
+                <w:r>
+                    <w:rPr><w:i/></w:rPr>
+                    <w:br/>
+                    <w:t>line two</w:t>
+                </w:r>
+            </w:p>
+        </w:body>
+        """
+        tree = etree.fromstring(xml.encode())
+        _merge_runs(tree)
+
+        # The <w:br/> must survive the merge.
+        assert tree.find(f".//{{{NS}}}br") is not None
+        texts = [t.text for t in tree.iter(T) if t.text]
+        assert "line one" in texts and "line two" in texts
+
+
+class TestSecureParsing:
+    """The hardened parser must neutralize untrusted-XML attacks."""
+
+    def test_entity_bomb_not_expanded(self):
+        """A 'billion laughs' entity bomb must not be expanded."""
+        from app.engine.xml_utils import secure_fromstring
+
+        bomb = b"""<?xml version="1.0"?>
+        <!DOCTYPE lolz [
+          <!ENTITY lol "lol">
+          <!ENTITY lol1 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">
+          <!ENTITY lol2 "&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;">
+        ]>
+        <root>&lol2;</root>"""
+        try:
+            el = secure_fromstring(bomb)
+            # If it parsed, entities must be unexpanded (no blow-up).
+            assert "lol" not in (el.text or "")
+        except etree.XMLSyntaxError:
+            pass  # rejected outright is also acceptable
+
+    def test_legit_xml_still_parses(self):
+        """Normal WordprocessingML, including &amp;, parses fine."""
+        from app.engine.xml_utils import secure_fromstring
+
+        legit = (
+            f'<w:document xmlns:w="{NS}"><w:body><w:p><w:r>'
+            f"<w:t>A &amp; B {{{{NAME}}}}</w:t></w:r></w:p></w:body></w:document>"
+        ).encode()
+        tree = secure_fromstring(legit)
+        txt = "".join(t.text for t in tree.iter(T) if t.text)
+        assert "A & B" in txt and "{{NAME}}" in txt

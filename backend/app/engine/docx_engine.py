@@ -23,6 +23,7 @@ from .xml_utils import (
     RPR,
     T,
     escape_xml,
+    secure_fromstring,
 )
 
 PLACEHOLDER_RE = re.compile(r"\{\{([A-Z][A-Z0-9_]*)\}\}")
@@ -52,7 +53,7 @@ def fill_template(template_path: str, values: dict[str, str]) -> bytes:
         if part_name not in parts:
             continue
 
-        tree = etree.fromstring(parts[part_name])
+        tree = secure_fromstring(parts[part_name])
         _merge_runs(tree)
         _fill_placeholders(tree, safe_values)
         modified_parts[part_name] = etree.tostring(tree, xml_declaration=True, encoding="UTF-8", standalone=True)
@@ -90,23 +91,24 @@ def _merge_runs(tree: etree._Element) -> None:
                 continue
 
             if _runs_mergeable(run, next_run):
-                # Append all text from next_run into run
+                # Move every child of next_run except its <w:rPr> (formatting,
+                # identical to run's) into run, preserving order. This keeps
+                # breaks, tabs, drawings, etc. that an earlier <w:t>-only merge
+                # would have silently dropped.
+                movable = [c for c in next_run if c.tag != RPR]
                 run_texts = run.findall(T)
-                next_texts = next_run.findall(T)
 
-                if run_texts and next_texts:
-                    # Concatenate text of last <w:t> in run with first <w:t> in next_run
+                # If both sides have text at the boundary, concatenate it into a
+                # single <w:t> so a placeholder split across runs (e.g. "{{",
+                # "KEY", "}}") reassembles for the regex pass.
+                if run_texts and movable and movable[0].tag == T:
                     last_t = run_texts[-1]
-                    first_next_t = next_texts[0]
+                    first_next_t = movable.pop(0)
                     last_t.text = (last_t.text or "") + (first_next_t.text or "")
                     last_t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
 
-                    # Move remaining <w:t> elements
-                    for extra_t in next_texts[1:]:
-                        run.append(extra_t)
-                elif next_texts:
-                    for nt in next_texts:
-                        run.append(nt)
+                for child in movable:
+                    run.append(child)
 
                 # Remove the merged run
                 parent.remove(next_run)
@@ -233,7 +235,7 @@ def _validate(output_bytes: bytes, values: dict[str, str]) -> None:
                 if part_name in [info.filename for info in zf.infolist()]:
                     xml_bytes = zf.read(part_name)
                     try:
-                        tree = etree.fromstring(xml_bytes)
+                        tree = secure_fromstring(xml_bytes)
                     except etree.XMLSyntaxError as e:
                         raise ValueError(f"Malformed XML in {part_name}: {e}")
 

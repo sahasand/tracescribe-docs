@@ -5,9 +5,7 @@ Extract plain text from uploaded documents (.docx, .pdf, .txt).
 import io
 import zipfile
 
-from lxml import etree
-
-from app.engine.xml_utils import T
+from app.engine.xml_utils import T, secure_fromstring
 
 
 def extract_text(file_bytes: bytes, filename: str) -> str:
@@ -49,7 +47,7 @@ def _extract_docx(file_bytes: bytes) -> str:
     with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as zf:
         if "word/document.xml" not in zf.namelist():
             raise ValueError("Invalid .docx: missing word/document.xml")
-        tree = etree.fromstring(zf.read("word/document.xml"))
+        tree = secure_fromstring(zf.read("word/document.xml"))
         for t_elem in tree.iter(T):
             if t_elem.text:
                 texts.append(t_elem.text)

@@ -33,7 +33,10 @@ async def extract_fields(template_type: str, document_text: str) -> dict[str, st
         document_text=document_text,
     )
 
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = anthropic.AsyncAnthropic(
+        api_key=settings.anthropic_api_key,
+        timeout=120.0,
+    )
 
     message = await client.messages.create(
         model=settings.anthropic_model,
@@ -42,8 +45,12 @@ async def extract_fields(template_type: str, document_text: str) -> dict[str, st
         messages=[{"role": "user", "content": prompt}],
     )
 
-    # Extract text from response
-    response_text = message.content[0].text.strip()
+    # Extract text from response (guard against non-text leading blocks)
+    response_text = next(
+        (block.text for block in message.content if block.type == "text"), ""
+    ).strip()
+    if not response_text:
+        raise ValueError("AI returned no text content")
 
     # Strip markdown code fences if present
     if response_text.startswith("```"):

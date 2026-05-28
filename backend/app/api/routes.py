@@ -1,6 +1,7 @@
 """API routes for the document formatter."""
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 
 from app.engine.docx_engine import fill_template
@@ -57,17 +58,18 @@ async def format_document(
             detail=f"Unsupported file type: .{ext}. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
         )
 
-    # Read file with size limit
-    file_bytes = await file.read()
+    # Read at most one byte past the limit so an oversized upload is rejected
+    # without buffering the entire (potentially huge) file into memory.
+    file_bytes = await file.read(MAX_FILE_SIZE + 1)
     if len(file_bytes) > MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="File too large. Maximum size: 10 MB.")
 
     if len(file_bytes) == 0:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
-    # Extract text
+    # Extract text (CPU/IO-bound; run off the event loop)
     try:
-        document_text = extract_text(file_bytes, filename)
+        document_text = await run_in_threadpool(extract_text, file_bytes, filename)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to extract text: {e}")
 
@@ -80,9 +82,9 @@ async def format_document(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI extraction failed: {e}")
 
-    # Fill template
+    # Fill template (CPU-bound; run off the event loop)
     try:
-        output_bytes = fill_template(str(template_info.path), values)
+        output_bytes = await run_in_threadpool(fill_template, str(template_info.path), values)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Template fill failed: {e}")
 
