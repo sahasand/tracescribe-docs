@@ -20,7 +20,7 @@ Web app. User uploads a messy document (.docx, .pdf, .txt), picks a template typ
 - **No database. No file storage. No auth.** Process in memory, return result, discard.
 
 ### Stack gotchas
-- **CORS:** backend `FRONTEND_URL` must exactly match the frontend's origin (incl. port). Locally the frontend runs on **3001**, so set `FRONTEND_URL=http://localhost:3001` in `backend/.env`.
+- **CORS:** `FRONTEND_URL` is a **comma-separated** allowlist of frontend origins (prod: both `https://docs.tracescribe.com` and `https://tracescribe-docs.vercel.app`). Each must match exactly (incl. port). Locally the frontend runs on **3001**, so set `FRONTEND_URL=http://localhost:3001` in `backend/.env`.
 - **Lint:** ESLint uses flat config (`frontend/eslint.config.mjs`); `next lint` was removed in Next 16 — run `npx eslint .`.
 - **Tailwind is intentionally pinned to 3.4.x.** v4 is deferred — it silently renames utilities the app uses (`shadow-sm`, `outline-none`) and needs visual QA before adopting.
 
@@ -159,7 +159,7 @@ No navigation, no sidebar, no login. One page, one flow.
 # Railway (backend)
 ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_MODEL=claude-opus-4-8   # optional; defaults to claude-opus-4-8
-FRONTEND_URL=https://docs.tracescribe.com
+FRONTEND_URL=https://docs.tracescribe.com,https://tracescribe-docs.vercel.app   # comma-separated CORS allowlist
 
 # Vercel (frontend)
 NEXT_PUBLIC_API_URL=https://tracescribe-docs-production.up.railway.app

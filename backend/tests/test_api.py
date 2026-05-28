@@ -114,3 +114,22 @@ async def test_format_all_template_types(mock_extract, client):
 
         resp = await client.post("/api/format", files=files, data=data)
         assert resp.status_code == 200, f"Failed for {template_type}: {resp.text}"
+
+
+class TestFrontendOrigins:
+    """CORS origin parsing from the FRONTEND_URL setting."""
+
+    def test_single_origin(self):
+        from app.config import Settings
+        s = Settings(frontend_url="https://docs.tracescribe.com")
+        assert s.frontend_origins == ["https://docs.tracescribe.com"]
+
+    def test_multiple_origins_with_whitespace(self):
+        from app.config import Settings
+        s = Settings(
+            frontend_url="https://docs.tracescribe.com, https://tracescribe-docs.vercel.app ,"
+        )
+        assert s.frontend_origins == [
+            "https://docs.tracescribe.com",
+            "https://tracescribe-docs.vercel.app",
+        ]
