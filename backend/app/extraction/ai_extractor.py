@@ -36,8 +36,8 @@ async def extract_fields(template_type: str, document_text: str) -> dict[str, st
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
     message = await client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=4096,
+        model=settings.anthropic_model,
+        max_tokens=8192,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
