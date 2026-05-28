@@ -6,18 +6,23 @@ Web app. User uploads a messy document (.docx, .pdf, .txt), picks a template typ
 ## Current State
 **Deployed and live.**
 
-- Backend: 46 tests passing (engine, extraction, API)
+- Backend: 49 tests passing (engine, extraction, API)
 - Frontend: Next.js builds clean, all components working
 - 6 templates with 288 total placeholders
-- **Live:** https://docs.tracescribe.com
-- **Backend:** https://tracescribe-docs-production.up.railway.app
+- **Live frontend:** https://docs.tracescribe.com (custom domain on tracescribe.com)
+- **Live backend:** https://tracescribe-docs-production.up.railway.app
 - **GitHub:** https://github.com/sahasand/tracescribe-docs
 
 ## Stack
 - **Backend:** Python 3.13, FastAPI, lxml, uvicorn — deploy on **Railway**
-- **Frontend:** Next.js 14 App Router, TypeScript, Tailwind, Lucide — deploy on **Vercel**
-- **AI:** Claude API (claude-sonnet-4-20250514) for content extraction
+- **Frontend:** Next.js 16 App Router, React 19, TypeScript, Tailwind 3.4.x, Lucide — deploy on **Vercel**
+- **AI:** Claude API (default `claude-opus-4-8`, override via `ANTHROPIC_MODEL` env var) for content extraction
 - **No database. No file storage. No auth.** Process in memory, return result, discard.
+
+### Stack gotchas
+- **CORS:** backend `FRONTEND_URL` must exactly match the frontend's origin (incl. port). Locally the frontend runs on **3001**, so set `FRONTEND_URL=http://localhost:3001` in `backend/.env`.
+- **Lint:** ESLint uses flat config (`frontend/eslint.config.mjs`); `next lint` was removed in Next 16 — run `npx eslint .`.
+- **Tailwind is intentionally pinned to 3.4.x.** v4 is deferred — it silently renames utilities the app uses (`shadow-sm`, `outline-none`) and needs visual QA before adopting.
 
 ## Project Structure
 ```
@@ -71,6 +76,7 @@ A .docx is a ZIP of XML files. The core engine unpacks the ZIP, finds `{{PLACEHO
 7. Process both `document.xml` AND `header1.xml` for placeholders.
 8. Use `re.sub` for replacement — headers have multiple placeholders per `<w:t>`.
 9. Validate output: ZIP valid, XML well-formed, no unfilled `{{}}` remaining.
+10. Parse all XML (esp. uploaded `.docx`) via `xml_utils.secure_fromstring` — entity expansion off (blocks billion-laughs/XXE). Never call `etree.fromstring` directly on untrusted bytes.
 
 ### XML Namespace
 ```python
@@ -114,7 +120,7 @@ For each template type, send the uploaded document text to Claude with a prompt 
 - Instructs Claude to infer/summarize where the source doc is incomplete
 - Returns empty string for fields with no matching content
 
-One API call per document. Model: claude-sonnet-4-20250514.
+One API call per document. Model: default `claude-opus-4-8`, configurable via `ANTHROPIC_MODEL`. `max_tokens=8192`. The route offloads `extract_text`/`fill_template` to a threadpool (`run_in_threadpool`) so blocking work doesn't stall the event loop.
 
 ## Frontend
 Single page app. Three states:
@@ -152,6 +158,7 @@ No navigation, no sidebar, no login. One page, one flow.
 ```
 # Railway (backend)
 ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-opus-4-8   # optional; defaults to claude-opus-4-8
 FRONTEND_URL=https://docs.tracescribe.com
 
 # Vercel (frontend)
@@ -179,5 +186,5 @@ npm run dev -- --port 3001
 ## Testing
 ```bash
 cd backend
-pytest tests/ -v   # 46 tests, ~1s
+pytest tests/ -v   # 49 tests, ~1s
 ```
