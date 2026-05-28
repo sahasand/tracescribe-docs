@@ -24,3 +24,6 @@ Thumbs.db
 
 # Tasks (local)
 tasks/template_analysis.md
+
+.vercel
+.env*.local

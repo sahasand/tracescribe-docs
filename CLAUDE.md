@@ -6,7 +6,7 @@ Web app. User uploads a messy document (.docx, .pdf, .txt), picks a template typ
 ## Current State
 **Deployed and live.**
 
-- Backend: 49 tests passing (engine, extraction, API)
+- Backend: 51 tests passing (engine, extraction, API)
 - Frontend: Next.js builds clean, all components working
 - 6 templates with 288 total placeholders
 - **Live frontend:** https://docs.tracescribe.com (custom domain on tracescribe.com)
@@ -143,10 +143,11 @@ No navigation, no sidebar, no login. One page, one flow.
 
 ### Backend → Railway
 - **URL:** https://tracescribe-docs-production.up.railway.app
+- **Railway project:** `tracescribe-docs` → service `tracescribe-docs` (production env). ⚠️ A *separate, unrelated* Railway project `tracescribe-backend` (a Clerk/OpenAI/Postgres app) also exists in this account — **don't confuse them**; this app's backend is the `tracescribe-docs` project only.
 - **Repo:** `sahasand/tracescribe-docs` (root directory: `backend`)
 - **Builder:** Dockerfile (auto-detected)
 - **Port:** 8000
-- Auto-deploys on push to `main`
+- Auto-deploys on push to `main`. `FRONTEND_URL` is set to both prod origins (comma-separated).
 
 ### Frontend → Vercel
 - **URL:** https://docs.tracescribe.com (custom domain on tracescribe.com)
@@ -186,5 +187,5 @@ npm run dev -- --port 3001
 ## Testing
 ```bash
 cd backend
-pytest tests/ -v   # 49 tests, ~1s
+pytest tests/ -v   # 51 tests, ~1s
 ```
