@@ -6,6 +6,7 @@ import { StepIndicator } from "@/components/StepIndicator";
 import { TemplateGrid } from "@/components/TemplateGrid";
 import { UploadZone } from "@/components/UploadZone";
 import { ReviewPanel } from "@/components/ReviewPanel";
+import { StructuredReview } from "@/components/StructuredReview";
 import { ResultPanel } from "@/components/ResultPanel";
 import { TEMPLATE_META } from "@/lib/templates";
 
@@ -73,12 +74,21 @@ export default function Home() {
             />
           ))}
 
-        {step === "review" && fields && (
+        {step === "review" && fields && selectedTemplate === "general" && (
+          <StructuredReview
+            templateName={templateName}
+            fields={fields}
+            onGenerate={(f) => confirmAndFill(f)}
+            onBack={goBack}
+          />
+        )}
+
+        {step === "review" && fields && selectedTemplate !== "general" && (
           <ReviewPanel
             templateName={templateName}
             fields={fields}
             onChange={updateField}
-            onGenerate={confirmAndFill}
+            onGenerate={() => confirmAndFill()}
             onBack={goBack}
           />
         )}

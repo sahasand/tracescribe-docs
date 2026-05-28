@@ -38,13 +38,20 @@ from .xml_utils import (
 PLACEHOLDER_RE = re.compile(r"\{\{([A-Z][A-Z0-9_]*)\}\}")
 
 
-def fill_template(template_path: str, values: dict[str, str]) -> bytes:
+def fill_template(
+    template_path: str,
+    values: dict[str, str],
+    structured: dict | None = None,
+) -> bytes:
     """
     Fill a .docx template with the given values.
 
     Args:
         template_path: Path to the .docx template file.
-        values: Mapping of placeholder keys (without braces) to fill values.
+        values: Mapping of scalar placeholder keys (without braces) to values.
+        structured: Optional variable-length data for the General Document —
+            lists of abbreviations/references/revisions/sections. When given,
+            repeatable template rows/section-blocks are cloned to match.
 
     Returns:
         Bytes of the completed .docx file.
@@ -65,6 +72,10 @@ def fill_template(template_path: str, values: dict[str, str]) -> bytes:
             continue
 
         tree = secure_fromstring(parts[part_name])
+        # Clone repeatable blocks before anything else so the rest of the
+        # pipeline (merge/fill/split/prune) treats them like normal content.
+        if structured is not None and part_name == "word/document.xml":
+            _expand_general(tree, structured)
         _merge_runs(tree)
         _fill_placeholders(tree, safe_values)
         _split_paragraphs(tree)
@@ -334,6 +345,150 @@ def _prune_empty_sections(tree: etree._Element) -> None:
             parent = el.getparent()
             if parent is not None:
                 parent.remove(el)
+
+
+# --- Variable-length expansion (General Document only) ------------------------
+
+
+def _fill_marker(t_elem: etree._Element, value: str) -> None:
+    """Set a placeholder <w:t> to a value and strip its template styling."""
+    t_elem.text = value or ""  # lxml escapes on serialize — pass raw text
+    t_elem.set(XML_SPACE, "preserve")
+    run = t_elem.getparent()
+    if run is not None and run.tag == R:
+        _strip_template_styling(run)
+
+
+def _fill_row_markers(row: etree._Element, marker_values: dict[str, str]) -> None:
+    """Within a cloned row, replace each {{MARKER}} cell with its value."""
+    for t in row.iter(T):
+        txt = t.text or ""
+        if "{{" not in txt:
+            continue
+        for marker, value in marker_values.items():
+            if marker in txt:
+                _fill_marker(t, value)
+                break
+
+
+def _row_text(tr: etree._Element) -> str:
+    return "".join(t.text or "" for t in tr.iter(T))
+
+
+def _expand_table(tree: etree._Element, base: str, items: list, markers) -> None:
+    """
+    Clone the template's '_1' data row once per item, fill it, then drop the
+    original template rows. `markers(item)` -> {"{{KEY}}": value, ...}.
+    """
+    proto = None
+    parent = None
+    for tbl in tree.iter(TBL):
+        for tr in tbl.findall(TR):
+            if "{{" + base + "_1" in _row_text(tr):
+                proto, parent = tr, tbl
+                break
+        if proto is not None:
+            break
+    if proto is None:
+        return
+
+    region = [tr for tr in parent.findall(TR) if re.search(r"\{\{" + base + r"_\d", _row_text(tr))]
+
+    anchor = proto
+    for item in items:
+        clone = deepcopy(proto)
+        _fill_row_markers(clone, markers(item))
+        anchor.addnext(clone)
+        anchor = clone
+
+    for tr in region:  # remove the original template rows
+        parent.remove(tr)
+
+
+def _set_para_marker(para: etree._Element, value: str) -> None:
+    """Set the single placeholder <w:t> inside a cloned heading/content para."""
+    for t in para.iter(T):
+        if "{{" in (t.text or ""):
+            _fill_marker(t, value)
+            return
+
+
+def _expand_sections(tree: etree._Element, sections: list) -> None:
+    """
+    Rebuild the numbered sections from a variable-length list. Clones the
+    template's heading/content paragraphs (keeping their <w:numPr>, so Word
+    auto-renumbers) for each section, subsection, and sub-subsection.
+    """
+    def find_para(marker: str):
+        for p in tree.iter(P):
+            if marker in "".join(t.text or "" for t in p.iter(T)):
+                return p
+        return None
+
+    h1 = find_para("{{SECTION_1_TITLE}}")
+    content = find_para("{{SECTION_1_CONTENT}}")
+    if h1 is None or content is None:
+        return
+    h2 = find_para("{{SECTION_1_1_TITLE}}")
+    if h2 is None:
+        h2 = h1
+    h3 = find_para("{{SECTION_1_1_1_TITLE}}")
+
+    body = h1.getparent()
+    h1p, cp, h2p = deepcopy(h1), deepcopy(content), deepcopy(h2)
+    h3p = deepcopy(h3) if h3 is not None else None
+
+    # Every paragraph that holds a SECTION_* placeholder is part of the region.
+    sec_paras = [
+        p for p in list(body)
+        if p.tag == P and "{{SECTION_" in "".join(t.text or "" for t in p.iter(T))
+    ]
+    if not sec_paras:
+        return
+    anchor = sec_paras[0]
+
+    def block(proto, value):
+        node = deepcopy(proto)
+        _set_para_marker(node, value)
+        return node
+
+    new_nodes: list[etree._Element] = []
+    for sec in sections:
+        new_nodes.append(block(h1p, sec.get("title", "")))
+        new_nodes.append(block(cp, sec.get("content", "")))
+        for sub in sec.get("subsections", []) or []:
+            new_nodes.append(block(h2p, sub.get("title", "")))
+            new_nodes.append(block(cp, sub.get("content", "")))
+            for ss in (sub.get("subsubsections", []) or []):
+                if h3p is None:
+                    break
+                new_nodes.append(block(h3p, ss.get("title", "")))
+                new_nodes.append(block(cp, ss.get("content", "")))
+
+    for node in new_nodes:
+        anchor.addprevious(node)
+    for p in sec_paras:
+        body.remove(p)
+
+
+def _expand_general(tree: etree._Element, data: dict) -> None:
+    """Expand all variable-length regions of the General Document."""
+    _expand_table(
+        tree, "ABBREV", data.get("abbreviations", []) or [],
+        lambda i: {"{{ABBREV_1}}": i.get("term", ""), "{{ABBREV_1_DEF}}": i.get("definition", "")},
+    )
+    _expand_table(
+        tree, "REF", data.get("references", []) or [],
+        lambda i: {"{{REF_1_ID}}": i.get("id", ""), "{{REF_1_TITLE}}": i.get("title", "")},
+    )
+    _expand_table(
+        tree, "REV", data.get("revisions", []) or [],
+        lambda i: {
+            "{{REV_1_VERSION}}": i.get("version", ""), "{{REV_1_DATE}}": i.get("date", ""),
+            "{{REV_1_AUTHOR}}": i.get("author", ""), "{{REV_1_DESCRIPTION}}": i.get("description", ""),
+        },
+    )
+    _expand_sections(tree, data.get("sections", []) or [])
 
 
 def _repack(original_bytes: bytes, modified_parts: dict[str, bytes]) -> bytes:

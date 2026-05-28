@@ -1,5 +1,7 @@
 """Pydantic models for API request/response validation."""
 
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -15,12 +17,13 @@ class ErrorResponse(BaseModel):
 
 
 class ExtractResponse(BaseModel):
-    """Structured fields extracted from an uploaded document, for review."""
+    """Extracted fields for review. Flat dict[str,str] for most templates;
+    the General Document includes variable-length lists (so values are Any)."""
     template_type: str
-    fields: dict[str, str]
+    fields: dict[str, Any]
 
 
 class FillRequest(BaseModel):
     """Reviewed/edited fields to fill into a template."""
     template_type: str
-    fields: dict[str, str]
+    fields: dict[str, Any]

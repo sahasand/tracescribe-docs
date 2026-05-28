@@ -9,7 +9,16 @@ export interface TemplateInfo {
 
 export type AppStep = "select" | "upload" | "review" | "result";
 
-export type Fields = Record<string, string>;
+// Extracted fields. Flat templates have string values; the General Document
+// adds variable-length lists, so values may be strings or arrays.
+export type Fields = Record<string, unknown>;
+
+export interface Abbrev { term: string; definition: string }
+export interface Reference { id: string; title: string }
+export interface Revision { version: string; date: string; author: string; description: string }
+export interface Subsubsection { title: string; content: string }
+export interface Subsection { title: string; content: string; subsubsections: Subsubsection[] }
+export interface Section { title: string; content: string; subsections: Subsection[] }
 
 export interface FormatState {
   step: AppStep;

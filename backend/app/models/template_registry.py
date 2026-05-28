@@ -17,6 +17,9 @@ class TemplateInfo:
     # Output token budget for the extraction call. The General Document has the
     # most fields (75) and longest content, so it needs more headroom.
     max_tokens: int = 8192
+    # When True, extraction returns variable-length structured data (lists) and
+    # the engine clones repeatable template blocks instead of a flat fill.
+    structured: bool = False
 
     @property
     def path(self) -> Path:
@@ -176,6 +179,7 @@ TEMPLATES: dict[str, TemplateInfo] = {
             "APPENDICES",
         ],
         max_tokens=16384,
+        structured=True,
     ),
 }
 

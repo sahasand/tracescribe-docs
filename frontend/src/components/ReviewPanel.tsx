@@ -112,7 +112,7 @@ export function ReviewPanel({ templateName, fields, onChange, onGenerate, onBack
                     {long ? (
                       <textarea
                         id={key}
-                        value={fields[key]}
+                        value={String(fields[key] ?? "")}
                         onChange={(e) => onChange(key, e.target.value)}
                         rows={3}
                         className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent resize-y"
@@ -121,7 +121,7 @@ export function ReviewPanel({ templateName, fields, onChange, onGenerate, onBack
                       <input
                         id={key}
                         type="text"
-                        value={fields[key]}
+                        value={String(fields[key] ?? "")}
                         onChange={(e) => onChange(key, e.target.value)}
                         className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent"
                       />

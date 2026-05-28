@@ -63,13 +63,21 @@ async def _extract(template_type: str, file: UploadFile) -> dict[str, str]:
         raise HTTPException(status_code=500, detail=f"AI extraction failed: {e}")
 
 
-async def _fill(template_info: TemplateInfo, fields: dict[str, str]) -> bytes:
-    """Shared fill step. Every placeholder is filled (missing → '')."""
-    values = {k: "" for k in template_info.placeholders}
-    for key, value in fields.items():
-        if key in values:  # whitelist to the template's own placeholders
-            values[key] = str(value) if value is not None else ""
+async def _fill(template_info: TemplateInfo, fields: dict) -> bytes:
+    """Shared fill step. Structured templates clone repeatable blocks; flat
+    templates fill every placeholder (missing → '')."""
     try:
+        if template_info.structured:
+            # Scalars feed the flat placeholder fill; the full structured dict
+            # (with its lists) drives repeatable-block expansion.
+            scalars = {k: str(v) for k, v in fields.items() if isinstance(v, str)}
+            return await run_in_threadpool(
+                fill_template, str(template_info.path), scalars, fields
+            )
+        values = {k: "" for k in template_info.placeholders}
+        for key, value in fields.items():
+            if key in values:  # whitelist to the template's own placeholders
+                values[key] = str(value) if value is not None else ""
         return await run_in_threadpool(fill_template, str(template_info.path), values)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Template fill failed: {e}")

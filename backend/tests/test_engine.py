@@ -469,3 +469,71 @@ class TestFillTemplateGeneral:
         for tbl in doc.iter(TBL):
             for row in tbl.findall(TR)[1:]:
                 assert any((t.text or "").strip() for t in row.iter(T))
+
+
+class TestExpandGeneral:
+    """Variable-length expansion of the real General Document (Phase 3)."""
+
+    def _count_rows_with(self, doc, substr_values):
+        """Count data rows across tables whose text contains all given substrings."""
+        from app.engine.xml_utils import secure_fromstring  # noqa
+        hits = 0
+        for tbl in doc.iter(TBL):
+            for row in tbl.findall(TR):
+                text = "".join(t.text or "" for t in row.iter(T))
+                if all(s in text for s in substr_values):
+                    hits += 1
+        return hits
+
+    def test_variable_length_tables_and_sections(self):
+        from app.engine.docx_engine import _is_numbered_heading, _para_text
+        from app.engine.xml_utils import secure_fromstring
+
+        from app.extraction.prompts import GENERAL_SCALAR_KEYS
+
+        info = get_template("general")
+        # Mirror the route: every scalar key is present (unused ones blank).
+        structured = {k: "" for k in GENERAL_SCALAR_KEYS}
+        structured["ORGANIZATION_NAME"] = "Acme"
+        structured["DOCUMENT_TITLE"] = "Plan"
+        # 7 abbreviations (template only ships 5 rows) + 8 sections (only 5).
+        structured.update({
+            "abbreviations": [{"term": f"AB{i}", "definition": f"def {i}"} for i in range(7)],
+            "references": [{"id": f"REF-{i}", "title": f"Title {i}"} for i in range(4)],
+            "revisions": [{"version": f"{i}.0", "date": "2026", "author": "X", "description": "d"} for i in range(2)],
+            "sections": [
+                {
+                    "title": f"Section {i}",
+                    "content": "Para one.\nPara two.",
+                    "subsections": [
+                        {"title": f"Sub {i}.1", "content": "s", "subsubsections": []},
+                    ] if i == 0 else [],
+                }
+                for i in range(8)
+            ],
+        })
+        # Route derives the scalar fill from the structured dict's string values.
+        scalars = {k: v for k, v in structured.items() if isinstance(v, str)}
+        out = fill_template(str(info.path), scalars, structured)
+
+        zf = zipfile.ZipFile(io.BytesIO(out))
+        assert zf.testzip() is None
+        doc = secure_fromstring(zf.read("word/document.xml"))
+        full = "".join(t.text or "" for t in doc.iter(T))
+
+        # all 7 abbreviations present (more than the 5 template rows)
+        for i in range(7):
+            assert f"AB{i}" in full and f"def {i}" in full
+        assert "REF-3" in full and "Title 3" in full  # 4th reference
+        # exactly 8 rebuilt top-level section headings (template only had 5)
+        headings = [p for p in doc.iter(P) if _is_numbered_heading(p)]
+        section_headings = [p for p in headings if _para_text(p).strip().startswith("Section ")]
+        assert len(section_headings) == 8, f"expected 8 section headings, got {len(section_headings)}"
+        for i in range(8):
+            assert f"Section {i}" in full
+        assert "Sub 0.1" in full
+        # multi-paragraph section content split
+        assert "Para one." in full and "Para two." in full
+        # scalar still filled, nothing left unfilled, no blank rows/headings
+        assert "Acme" in full and "{{" not in full
+        assert [p for p in doc.iter(P) if _is_numbered_heading(p) and not _para_text(p).strip()] == []

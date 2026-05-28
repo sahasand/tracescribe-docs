@@ -43,11 +43,23 @@ class TestTextExtractorUnsupported:
 
 class TestPrompts:
     @pytest.mark.parametrize("template_type", list(TEMPLATES.keys()))
-    def test_prompt_contains_all_keys(self, template_type):
+    def test_flat_prompt_contains_all_keys(self, template_type):
         info = get_template(template_type)
+        if info.structured:
+            pytest.skip("structured templates use a list-shaped prompt, not flat keys")
         prompt = build_extraction_prompt(template_type, info.placeholders, "Sample text")
         for key in info.placeholders:
             assert key in prompt, f"Key {key} missing from {template_type} prompt"
+
+    def test_structured_prompt_shape(self):
+        from app.extraction.prompts import GENERAL_SCALAR_KEYS
+        prompt = build_extraction_prompt("general", get_template("general").placeholders, "Sample text")
+        # scalar keys + the variable-length list fields must be described
+        for key in GENERAL_SCALAR_KEYS:
+            assert key in prompt
+        for list_field in ("abbreviations", "references", "revisions", "sections", "subsections"):
+            assert list_field in prompt
+        assert "Sample text" in prompt
 
     def test_system_prompt_exists(self):
         assert len(SYSTEM_PROMPT) > 50

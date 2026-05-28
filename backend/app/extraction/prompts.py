@@ -126,27 +126,43 @@ SOURCE DOCUMENT:
 {text}"""
 
 
+# Scalar (single-value) fields of the General Document. Everything else is a
+# variable-length list (see _general_prompt / ai_extractor._normalize_general).
+GENERAL_SCALAR_KEYS = [
+    "ORGANIZATION_NAME", "DOCUMENT_TITLE", "DOCUMENT_SUBTITLE", "DOCUMENT_ID",
+    "VERSION", "EFFECTIVE_DATE", "AUTHOR", "DEPARTMENT", "STATUS",
+    "AUTHOR_DATE", "REVIEWER", "REVIEWER_DATE", "APPROVER", "APPROVER_DATE",
+    "APPENDICES",
+]
+
+
 def _general_prompt(placeholders: list[str], text: str) -> str:
-    return f"""Extract content from this document to fill a General Document template.
+    return f"""Extract content from this document to fill a flexible General Document.
 
-This is a flexible, multi-section document template with:
-- Cover page: organization name, document title, subtitle, document ID, version, effective date, author, department, status
-- Signature page: author/reviewer/approver with dates
-- Revision history: up to 3 revision entries (version, date, author, description)
-- Abbreviations table: up to 5 abbreviations with definitions
-- 5 numbered sections, each with:
-  - A section title and content
-  - Two sub-sections (e.g., 1.1, 1.2) each with title and content
-  - Section 1 also has a third-level sub-section (1.1.1)
-- References: up to 3 referenced documents (ID and title)
-- Appendices
+Return a JSON object with EXACTLY these keys.
 
-Map the source document's content to the numbered sections logically. If the source has fewer than 5 major sections, leave extra sections empty.
+Scalar fields (string values; use "" when the source has no matching content):
+  "ORGANIZATION_NAME", "DOCUMENT_TITLE", "DOCUMENT_SUBTITLE", "DOCUMENT_ID",
+  "VERSION", "EFFECTIVE_DATE", "AUTHOR", "DEPARTMENT", "STATUS",
+  "AUTHOR_DATE", "REVIEWER", "REVIEWER_DATE", "APPROVER", "APPROVER_DATE",
+  "APPENDICES"
 
-For the long section content fields (the SECTION_*_CONTENT keys), you MAY use the newline character "\n" to separate paragraphs — each "\n" becomes a new paragraph in the document. Do NOT use "\n" in short fields (titles, IDs, dates, names, abbreviations, references).
+List fields (arrays — include ONE entry per real item, in source order):
+  "revisions":     [{{"version": "", "date": "", "author": "", "description": ""}}]
+  "abbreviations": [{{"term": "", "definition": ""}}]
+  "references":    [{{"id": "", "title": ""}}]
+  "sections":      [{{"title": "", "content": "", "subsections": [
+                       {{"title": "", "content": "", "subsubsections": [
+                          {{"title": "", "content": ""}}]}}]}}]
 
-Return a JSON object with these exact keys (use "" for fields with no matching content):
-{_format_keys(placeholders)}
+Rules:
+- Create as MANY sections / subsections / abbreviations / references / revisions
+  as the source actually contains. Do not pad to a fixed count and do not drop
+  extras. Use empty arrays [] for parts the source lacks (e.g. no subsections).
+- In the "content" fields you MAY use the newline character "\n" to separate
+  paragraphs — each "\n" becomes a new paragraph. Keep titles, dates, ids,
+  names, terms, and definitions short and single-line (no "\n").
+- Return ONLY the JSON object.
 
 SOURCE DOCUMENT:
 {text}"""
